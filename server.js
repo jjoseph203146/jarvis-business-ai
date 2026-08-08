@@ -170,22 +170,18 @@ class GmailService {
  * These become `actions` on the chat response; the browser opens them so the
  * dashboard lands on the user's screen rather than inside the server.
  */
+// "make" alone is too common to match on ("make me a summary"), so it only
+// counts as a money question when paired with "how much".
+const PATTERNS = {
+  money: /money|earn(?:ed|ing|ings)?|revenue|stripe|payment|payout|income|profit|sales|sold|paid|balance|charge|how much.*(?:make|made|making)/,
+  email: /email|gmail|message|inbox|mail/,
+  business: /business|overview|summary|dashboard|site|website|security|request|ticket|client|lead|prospect|pipeline|how.*doing/
+};
+
 const DASHBOARDS = [
-  {
-    label: 'Open Stripe Dashboard',
-    url: 'https://dashboard.stripe.com',
-    match: /money|earn|revenue|stripe|payment|payout|income|made|charge/
-  },
-  {
-    label: 'Open Gmail',
-    url: 'https://mail.google.com',
-    match: /email|gmail|message|inbox|mail/
-  },
-  {
-    label: 'Open Luminate OS',
-    url: 'https://luminate-os.vercel.app',
-    match: /business|overview|dashboard|site|website|security|request|ticket|client|lead|prospect|pipeline/
-  }
+  { label: 'Open Stripe Dashboard', url: 'https://dashboard.stripe.com', match: PATTERNS.money },
+  { label: 'Open Gmail', url: 'https://mail.google.com', match: PATTERNS.email },
+  { label: 'Open Luminate OS', url: 'https://luminate-os.vercel.app', match: PATTERNS.business }
 ];
 
 function detectActions(userMessage) {
@@ -211,7 +207,7 @@ const gmailService = new GmailService();
 /**
  * Use Claude to understand the user's prompt and route to the right service
  */
-async function processUserPrompt(userMessage) {
+async function processUserPrompt(userMessage, serviceData = {}) {
   const systemPrompt = `You are JARVIS, an AI business assistant for Jacob's company. You help with:
 1. Business Overview - Access Luminate OS data (sites, financial, requests, leads, security)
 2. Financial Data - Access Stripe earnings, revenue, payments
@@ -227,7 +223,22 @@ When the user asks a question, identify which service(s) they need and respond w
 3. Clear explanation of the results
 4. Recommended next steps if relevant
 
-Be professional but friendly. Always provide actionable insights.`;
+Be professional but friendly. Always provide actionable insights.
+
+When a "Live data" block accompanies the question, it was fetched from the
+real integrations moments ago — answer from those numbers and cite them
+directly. Never claim you lack a live connection to a service whose data is
+present. If the block reports an error for a service, say plainly that the
+service could not be reached.`;
+
+  // Claude has to see the fetched data, otherwise it answers from nothing and
+  // claims it has no live connection even when the numbers came back fine.
+  const hasData = Object.keys(serviceData).length > 0;
+  const content = hasData
+    ? `${userMessage}\n\nLive data fetched for this request:\n\`\`\`json\n${
+        JSON.stringify(serviceData, null, 2).slice(0, 20000)
+      }\n\`\`\``
+    : userMessage;
 
   try {
     const response = await anthropic.messages.create({
@@ -238,7 +249,7 @@ Be professional but friendly. Always provide actionable insights.`;
       messages: [
         {
           role: 'user',
-          content: userMessage
+          content
         }
       ]
     });
@@ -266,8 +277,8 @@ async function routeAndExecute(userMessage) {
 
   const intents = {
     business: /business|overview|summary|dashboard|how.*doing/.test(lowerMessage),
-    money: /money|earn|revenue|stripe|payment|income|made/.test(lowerMessage),
-    email: /email|gmail|message|inbox/.test(lowerMessage),
+    money: PATTERNS.money.test(lowerMessage),
+    email: PATTERNS.email.test(lowerMessage),
     sites: /site|website|security|status|issue|problem/.test(lowerMessage),
     requests: /request|ticket|task|issue|client/.test(lowerMessage),
     leads: /lead|prospect|follow.*up|pipeline/.test(lowerMessage)
@@ -346,11 +357,9 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Message required' });
     }
 
-    // Get Claude's initial response
-    const claudeResponse = await processUserPrompt(message);
-
-    // Route to services and fetch data
+    // Fetch first so Claude can answer from the real numbers.
     const serviceData = await routeAndExecute(message);
+    const claudeResponse = await processUserPrompt(message, serviceData);
 
     res.json({
       response: claudeResponse,
