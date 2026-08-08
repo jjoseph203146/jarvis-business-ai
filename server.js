@@ -30,6 +30,7 @@ const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static('public'));
 
 // ============================================
 // INTEGRATION SERVICES
