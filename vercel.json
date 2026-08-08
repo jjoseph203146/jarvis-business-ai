@@ -8,15 +8,5 @@
     "server.js": {
       "maxDuration": 30
     }
-  },
-  "env": [
-    "ANTHROPIC_API_KEY",
-    "STRIPE_API_KEY",
-    "GMAIL_CLIENT_ID",
-    "GMAIL_CLIENT_SECRET",
-    "GMAIL_REDIRECT_URL",
-    "LUMINATE_OS_API_KEY",
-    "LUMINATE_OS_BASE_URL",
-    "NODE_ENV"
-  ]
+  }
 }
