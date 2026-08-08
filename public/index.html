@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS - Business AI Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(circle at 50% 50%, #0a1428 0%, #050811 100%);
+            color: #00d4ff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .jarvis-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: relative;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="%23004d66" stroke-width="0.5" opacity="0.3"/></pattern></defs><rect width="100" height="100" fill="%230a1428"/><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+            background-size: 100px 100px;
+        }
+
+        .hologram-grid {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            opacity: 0.1;
+        }
+
+        .header {
+            padding: 30px;
+            text-align: center;
+            border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .jarvis-title {
+            font-size: 2.5em;
+            font-weight: 300;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            color: #00d4ff;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.6), 0 0 40px rgba(0, 212, 255, 0.3);
+            animation: glow 3s ease-in-out infinite;
+        }
+
+        .status {
+            font-size: 0.9em;
+            margin-top: 10px;
+            color: #00b8cc;
+            letter-spacing: 2px;
+        }
+
+        .status.active::before {
+            content: '● ';
+            color: #00ff00;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% {
+                text-shadow: 0 0 20px rgba(0, 212, 255, 0.6), 0 0 40px rgba(0, 212, 255, 0.3);
+            }
+            50% {
+                text-shadow: 0 0 30px rgba(0, 212, 255, 0.8), 0 0 50px rgba(0, 212, 255, 0.5);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .data-panel {
+            flex: 0 0 30%;
+            border-right: 2px solid rgba(0, 212, 255, 0.2);
+            overflow-y: auto;
+            padding: 20px;
+            background: rgba(10, 20, 40, 0.5);
+        }
+
+        .data-widget {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            border-radius: 5px;
+            background: rgba(0, 20, 40, 0.6);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.1);
+        }
+
+        .data-widget h3 {
+            color: #00ff00;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .data-widget p {
+            font-size: 0.85em;
+            line-height: 1.6;
+            color: #00d4ff;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            padding: 12px 15px;
+            border-radius: 5px;
+            max-width: 80%;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: rgba(0, 100, 150, 0.4);
+            border-left: 3px solid #0099ff;
+            color: #00d4ff;
+        }
+
+        .message.jarvis {
+            align-self: flex-start;
+            background: rgba(0, 50, 100, 0.3);
+            border-left: 3px solid #00ff00;
+            color: #00ff00;
+            font-style: italic;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid rgba(0, 212, 255, 0.4);
+            background: rgba(5, 8, 17, 0.8);
+            color: #00d4ff;
+            border-radius: 5px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-area input:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+        }
+
+        .input-area input::placeholder {
+            color: rgba(0, 212, 255, 0.5);
+        }
+
+        .send-button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #0066cc, #0099ff);
+            color: white;
+            border: 1px solid #00d4ff;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+            box-shadow: 0 0 10px rgba(0, 153, 255, 0.5);
+        }
+
+        .send-button:hover {
+            background: linear-gradient(135deg, #0080dd, #00aaff);
+            box-shadow: 0 0 20px rgba(0, 153, 255, 0.8);
+            transform: scale(1.05);
+        }
+
+        .send-button:active {
+            transform: scale(0.95);
+        }
+
+        .loading-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #00ff00;
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 49%, 100% {
+                opacity: 0.3;
+            }
+            50% {
+                opacity: 1;
+            }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 15px;
+            border-top: 2px solid rgba(0, 212, 255, 0.2);
+            font-size: 0.8em;
+            color: rgba(0, 212, 255, 0.6);
+            background: rgba(10, 20, 40, 0.3);
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 212, 255, 0.4);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 212, 255, 0.6);
+        }
+
+        .scanning-animation {
+            position: relative;
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+        }
+
+        .scanning-line {
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #00ff00, transparent);
+            top: 50%;
+            animation: scan 1.5s linear infinite;
+        }
+
+        @keyframes scan {
+            0% {
+                top: 0;
+            }
+            100% {
+                top: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="jarvis-container">
+        <div class="hologram-grid"></div>
+
+        <div class="header">
+            <div class="jarvis-title">⬡ JARVIS ⬡</div>
+            <div class="status active">SYSTEM ONLINE</div>
+        </div>
+
+        <div class="main-content">
+            <div class="data-panel">
+                <div id="dataPanel"></div>
+            </div>
+
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages"></div>
+
+                <div class="input-area">
+                    <input
+                        type="text"
+                        id="messageInput"
+                        placeholder="Speak your mind, sir..."
+                        autocomplete="off"
+                    />
+                    <button class="send-button" id="sendButton">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            JARVIS Business AI Assistant | Always at your service
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+        class JARVISClient {
+            constructor() {
+                this.chatMessages = document.getElementById('chatMessages');
+                this.messageInput = document.getElementById('messageInput');
+                this.sendButton = document.getElementById('sendButton');
+                this.dataPanel = document.getElementById('dataPanel');
+
+                this.setupEventListeners();
+                this.loadInitialData();
+            }
+
+            setupEventListeners() {
+                this.sendButton.addEventListener('click', () => this.sendMessage());
+                this.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendMessage();
+                });
+            }
+
+            async loadInitialData() {
+                try {
+                    const response = await fetch(`${API_BASE}/api/business/overview`);
+                    const data = await response.json();
+                    this.displayDataPanel(data);
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                    this.displayDataPanel({
+                        summary: {
+                            total_active_sites: 0,
+                            average_response_time_ms: 0
+                        },
+                        financial: { mrr: 0 }
+                    });
+                }
+            }
+
+            displayDataPanel(data) {
+                if (!data) return;
+
+                let html = '';
+
+                if (data.summary) {
+                    html += `
+                        <div class="data-widget">
+                            <h3>⚡ System Status</h3>
+                            <p>Active Sites: ${data.summary.total_active_sites || 0}</p>
+                            <p>Avg Response: ${data.summary.average_response_time_ms || 0}ms</p>
+                        </div>
+                    `;
+                }
+
+                if (data.financial) {
+                    html += `
+                        <div class="data-widget">
+                            <h3>💰 Financial</h3>
+                            <p>Monthly Revenue: $${data.financial.mrr || 0}</p>
+                            <p>Collected: $${data.financial.collected_this_month || 0}</p>
+                            <p>Active Clients: ${data.financial.active_clients_count || 0}</p>
+                        </div>
+                    `;
+                }
+
+                if (data.attention && data.attention.length > 0) {
+                    html += `
+                        <div class="data-widget">
+                            <h3>🚨 Attention Required</h3>
+                            <p>${data.attention.slice(0, 3).map(a => a.title).join('<br>')}</p>
+                        </div>
+                    `;
+                }
+
+                this.dataPanel.innerHTML = html;
+            }
+
+            async sendMessage() {
+                const message = this.messageInput.value.trim();
+                if (!message) return;
+
+                // Add user message to chat
+                this.addMessage(message, 'user');
+                this.messageInput.value = '';
+
+                // Show loading indicator
+                this.addMessage('Processing...', 'jarvis');
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message })
+                    });
+
+                    const result = await response.json();
+
+                    // Remove loading message
+                    const messages = this.chatMessages.querySelectorAll('.message');
+                    if (messages.length > 0) {
+                        messages[messages.length - 1].remove();
+                    }
+
+                    // Add JARVIS response
+                    this.addMessage(result.response || 'Processing complete.', 'jarvis');
+
+                    // Update data panel if new data available
+                    if (result.data) {
+                        this.displayDataPanel(result.data.businessOverview || {});
+                    }
+                } catch (error) {
+                    const messages = this.chatMessages.querySelectorAll('.message');
+                    if (messages.length > 0) {
+                        messages[messages.length - 1].remove();
+                    }
+                    this.addMessage(`Error: ${error.message}`, 'jarvis');
+                }
+            }
+
+            addMessage(text, sender) {
+                const messageEl = document.createElement('div');
+                messageEl.className = `message ${sender}`;
+                messageEl.textContent = text;
+                this.chatMessages.appendChild(messageEl);
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            }
+        }
+
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            new JARVISClient();
+        });
+    </script>
+</body>
+</html>
