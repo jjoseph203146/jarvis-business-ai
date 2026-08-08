@@ -78,13 +78,20 @@ class StripeService {
       const balance = await stripe.balance.retrieve();
       const charges = await stripe.charges.list({ limit: 50 });
 
+      // Stripe reports every amount in minor units. Summary figures are
+      // normalised to dollars so nothing downstream has to guess which is which.
+      const toDollars = cents => Math.round(cents) / 100;
+      const sumAmounts = funds => funds.reduce((total, fund) => total + fund.amount, 0);
+
       return {
         available: balance.available,
         pending: balance.pending,
         recentCharges: charges.data.slice(0, 10),
         summary: {
-          totalBalance: balance.available.reduce((sum, b) => sum + b.amount, 0),
-          todayRevenue: this.calculateDayRevenue(charges.data)
+          currency: 'usd',
+          availableBalanceUsd: toDollars(sumAmounts(balance.available)),
+          pendingBalanceUsd: toDollars(sumAmounts(balance.pending)),
+          todayRevenueUsd: this.calculateDayRevenue(charges.data)
         }
       };
     } catch (error) {
@@ -229,7 +236,10 @@ When a "Live data" block accompanies the question, it was fetched from the
 real integrations moments ago — answer from those numbers and cite them
 directly. Never claim you lack a live connection to a service whose data is
 present. If the block reports an error for a service, say plainly that the
-service could not be reached.`;
+service could not be reached.
+
+Amounts are in dollars only where the field name ends in "Usd". Every other
+Stripe amount is in cents and must be divided by 100 before you quote it.`;
 
   // Claude has to see the fetched data, otherwise it answers from nothing and
   // claims it has no live connection even when the numbers came back fine.
