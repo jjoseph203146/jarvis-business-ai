@@ -492,18 +492,24 @@ app.get('/auth/gmail/callback', async (req, res) => {
 // START SERVER
 // ============================================
 
-app.listen(PORT, () => {
-  console.log(`
+// On Vercel the app is exported as a serverless function (see api/index.js),
+// so only bind a port when running locally.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`
 ╔════════════════════════════════════════╗
 ║   JARVIS Business AI Assistant        ║
 ║   Running on port ${PORT}                  ║
 ╚════════════════════════════════════════╝
   `);
-  console.log(`API Documentation:`);
-  console.log(`  POST   /api/chat                    - Send message to JARVIS`);
-  console.log(`  GET    /api/business/overview       - Get business overview`);
-  console.log(`  GET    /api/financial/summary       - Get Stripe financials`);
-  console.log(`  GET    /api/email/unread            - Get unread emails`);
-  console.log(`  POST   /api/browser/dashboard       - Open dashboard`);
-  console.log(`  GET    /auth/gmail                  - Connect Gmail`);
-});
+    console.log(`API Documentation:`);
+    console.log(`  POST   /api/chat                    - Send message to JARVIS`);
+    console.log(`  GET    /api/business/overview       - Get business overview`);
+    console.log(`  GET    /api/financial/summary       - Get Stripe financials`);
+    console.log(`  GET    /api/email/unread            - Get unread emails`);
+    console.log(`  POST   /api/browser/dashboard       - Open dashboard`);
+    console.log(`  GET    /auth/gmail                  - Connect Gmail`);
+  });
+}
+
+export default app;

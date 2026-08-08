@@ -1,12 +1,16 @@
 {
-  "buildCommand": "npm install",
   "devCommand": "node --watch server.js",
   "installCommand": "npm install",
   "framework": null,
   "regions": ["iad1"],
   "functions": {
-    "server.js": {
+    "api/index.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/health", "destination": "/api/index" },
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/auth/(.*)", "destination": "/api/index" }
+  ]
 }
