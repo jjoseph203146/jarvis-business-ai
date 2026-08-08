@@ -252,7 +252,10 @@ class BrowserService {
 }
 
 // Initialize services
-const luminateOS = new LuminateOSService(process.env.LUMINATE_OS_API_KEY);
+const luminateOS = new LuminateOSService(
+  process.env.LUMINATE_OS_API_KEY,
+  process.env.LUMINATE_OS_BASE_URL
+);
 const stripeService = new StripeService();
 const gmailService = new GmailService();
 const browserService = new BrowserService();
@@ -284,8 +287,9 @@ Be professional but friendly. Always provide actionable insights.`;
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
+      model: 'claude-sonnet-5',
+      max_tokens: 8192,
+      output_config: { effort: 'low' },
       system: systemPrompt,
       messages: [
         {
@@ -295,7 +299,15 @@ Be professional but friendly. Always provide actionable insights.`;
       ]
     });
 
-    return response.content[0].type === 'text' ? response.content[0].text : '';
+    if (response.stop_reason === 'refusal') {
+      return "I wasn't able to answer that one, sir. Try rephrasing?";
+    }
+
+    // Adaptive thinking is on by default, so the text is not always content[0].
+    return response.content
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('');
   } catch (error) {
     console.error('Claude API error:', error.message);
     throw error;
