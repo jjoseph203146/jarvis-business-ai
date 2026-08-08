@@ -18,6 +18,5 @@
     "LUMINATE_OS_API_KEY",
     "LUMINATE_OS_BASE_URL",
     "NODE_ENV"
-  ],
-  "public": true
+  ]
 }
