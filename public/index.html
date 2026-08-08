@@ -318,6 +318,78 @@
                 top: 100%;
             }
         }
+
+        @media (max-width: 768px) {
+            body {
+                overflow-y: auto;
+                height: auto;
+                min-height: 100vh;
+            }
+
+            .jarvis-container {
+                height: auto;
+                min-height: 100vh;
+            }
+
+            .header {
+                padding: 16px;
+            }
+
+            .jarvis-title {
+                font-size: 1.5em;
+                letter-spacing: 2px;
+            }
+
+            .status {
+                font-size: 0.75em;
+            }
+
+            .main-content {
+                flex-direction: column;
+                overflow: visible;
+            }
+
+            .data-panel {
+                flex: 0 0 auto;
+                max-height: 35vh;
+                width: 100%;
+                border-right: none;
+                border-bottom: 2px solid rgba(0, 212, 255, 0.2);
+                padding: 12px;
+            }
+
+            .chat-container {
+                padding: 12px;
+                min-height: 60vh;
+            }
+
+            .chat-messages {
+                max-height: 50vh;
+            }
+
+            .message,
+            .message-actions {
+                max-width: 92%;
+            }
+
+            .input-area {
+                flex-direction: column;
+            }
+
+            .send-button {
+                width: 100%;
+                padding: 12px;
+            }
+
+            .input-area input {
+                font-size: 16px;
+            }
+
+            .footer {
+                padding: 10px;
+                font-size: 0.7em;
+            }
+        }
     </style>
 </head>
 <body>
