@@ -161,6 +161,33 @@
             font-style: italic;
         }
 
+        .message-actions {
+            align-self: flex-start;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-width: 80%;
+        }
+
+        .action-btn {
+            display: inline-block;
+            padding: 10px 16px;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            background: rgba(0, 255, 0, 0.08);
+            color: #00ff00;
+            font-family: inherit;
+            font-size: 0.9em;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .action-btn:hover {
+            background: rgba(0, 255, 0, 0.2);
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.4);
+        }
+
         @keyframes slideIn {
             from {
                 opacity: 0;
@@ -431,6 +458,7 @@
 
                     // Add JARVIS response
                     this.addMessage(result.response || 'Processing complete.', 'jarvis');
+                    this.addActions(result.actions);
 
                     // Update data panel if new data available
                     if (result.data) {
@@ -450,6 +478,28 @@
                 messageEl.className = `message ${sender}`;
                 messageEl.textContent = text;
                 this.chatMessages.appendChild(messageEl);
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            }
+
+            // Rendered as real links rather than window.open() calls, which
+            // browsers block once the click handler has awaited a fetch.
+            addActions(actions) {
+                if (!actions || actions.length === 0) return;
+
+                const containerEl = document.createElement('div');
+                containerEl.className = 'message-actions';
+
+                actions.forEach(action => {
+                    const linkEl = document.createElement('a');
+                    linkEl.className = 'action-btn';
+                    linkEl.href = action.url;
+                    linkEl.target = '_blank';
+                    linkEl.rel = 'noopener noreferrer';
+                    linkEl.textContent = `${action.label} ↗`;
+                    containerEl.appendChild(linkEl);
+                });
+
+                this.chatMessages.appendChild(containerEl);
                 this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
             }
         }

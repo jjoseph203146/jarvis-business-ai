@@ -5,7 +5,6 @@ import axios from 'axios';
 import Stripe from 'stripe';
 import { google } from 'googleapis';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { chromium } from 'playwright';
 
 dotenv.config();
 
@@ -42,50 +41,26 @@ app.use(express.static('public'));
 class LuminateOSService {
   constructor(apiKey, baseUrl) {
     this.apiKey = apiKey;
-    this.baseUrl = baseUrl || 'https://api.luminateos.com';
+    this.baseUrl = baseUrl || 'https://luminate-os.vercel.app';
   }
 
+  // The metrics route authenticates with an `api_key` query parameter rather
+  // than an Authorization header, and returns the whole dashboard in one call.
   async getBusinessOverview() {
     try {
-      const response = await axios.get(`${this.baseUrl}/business/overview`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` }
+      const response = await axios.get(`${this.baseUrl}/api/dashboard-metrics`, {
+        params: { api_key: this.apiKey },
+        headers: { Accept: 'application/json' }
       });
-      return response.data;
-    } catch (error) {
-      console.error('Luminate OS error:', error.message);
-      throw error;
-    }
-  }
 
-  async getSiteDetails(siteId) {
-    try {
-      const response = await axios.get(`${this.baseUrl}/sites/${siteId}`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Luminate OS error:', error.message);
-      throw error;
-    }
-  }
+      // An unauthenticated request redirects to the login page, so a non-object
+      // body means the key was rejected rather than that there is no data.
+      if (typeof response.data !== 'object' || response.data === null) {
+        throw new Error(
+          'Luminate OS returned a non-JSON response — check LUMINATE_OS_API_KEY'
+        );
+      }
 
-  async getRequests() {
-    try {
-      const response = await axios.get(`${this.baseUrl}/requests`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Luminate OS error:', error.message);
-      throw error;
-    }
-  }
-
-  async getLeads() {
-    try {
-      const response = await axios.get(`${this.baseUrl}/leads`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` }
-      });
       return response.data;
     } catch (error) {
       console.error('Luminate OS error:', error.message);
@@ -127,12 +102,6 @@ class StripeService {
       .reduce((sum, charge) => sum + charge.amount, 0) / 100;
   }
 
-  async openStripeDashboard() {
-    return {
-      url: 'https://dashboard.stripe.com',
-      message: 'Opening your Stripe dashboard'
-    };
-  }
 }
 
 /**
@@ -197,58 +166,34 @@ class GmailService {
 }
 
 /**
- * Browser Automation Service (Playwright)
+ * Dashboards JARVIS can offer to open, and the phrasing that surfaces each one.
+ * These become `actions` on the chat response; the browser opens them so the
+ * dashboard lands on the user's screen rather than inside the server.
  */
-class BrowserService {
-  async openDashboard(url, selector = null) {
-    let browser;
-    try {
-      browser = await chromium.launch();
-      const page = await browser.newPage();
-      await page.goto(url, { waitUntil: 'networkidle' });
-
-      if (selector) {
-        await page.waitForSelector(selector);
-      }
-
-      const screenshot = await page.screenshot({ fullPage: false });
-      await browser.close();
-
-      return {
-        screenshot: screenshot.toString('base64'),
-        url: url,
-        title: await page.title()
-      };
-    } catch (error) {
-      console.error('Browser automation error:', error.message);
-      if (browser) await browser.close();
-      throw error;
-    }
+const DASHBOARDS = [
+  {
+    label: 'Open Stripe Dashboard',
+    url: 'https://dashboard.stripe.com',
+    match: /money|earn|revenue|stripe|payment|payout|income|made|charge/
+  },
+  {
+    label: 'Open Gmail',
+    url: 'https://mail.google.com',
+    match: /email|gmail|message|inbox|mail/
+  },
+  {
+    label: 'Open Luminate OS',
+    url: 'https://luminate-os.vercel.app',
+    match: /business|overview|dashboard|site|website|security|request|ticket|client|lead|prospect|pipeline/
   }
+];
 
-  async extractDashboardData(url, dataSelectors) {
-    let browser;
-    try {
-      browser = await chromium.launch();
-      const page = await browser.newPage();
-      await page.goto(url, { waitUntil: 'networkidle' });
+function detectActions(userMessage) {
+  const lowerMessage = userMessage.toLowerCase();
 
-      const data = {};
-      for (const [key, selector] of Object.entries(dataSelectors)) {
-        const element = await page.$(selector);
-        if (element) {
-          data[key] = await element.textContent();
-        }
-      }
-
-      await browser.close();
-      return data;
-    } catch (error) {
-      console.error('Data extraction error:', error.message);
-      if (browser) await browser.close();
-      throw error;
-    }
-  }
+  return DASHBOARDS
+    .filter(dashboard => dashboard.match.test(lowerMessage))
+    .map(({ label, url }) => ({ label, url }));
 }
 
 // Initialize services
@@ -258,7 +203,6 @@ const luminateOS = new LuminateOSService(
 );
 const stripeService = new StripeService();
 const gmailService = new GmailService();
-const browserService = new BrowserService();
 
 // ============================================
 // CLAUDE AI ROUTING & UNDERSTANDING
@@ -320,7 +264,7 @@ Be professional but friendly. Always provide actionable insights.`;
 async function routeAndExecute(userMessage) {
   const lowerMessage = userMessage.toLowerCase();
 
-  const actions = {
+  const intents = {
     business: /business|overview|summary|dashboard|how.*doing/.test(lowerMessage),
     money: /money|earn|revenue|stripe|payment|income|made/.test(lowerMessage),
     email: /email|gmail|message|inbox/.test(lowerMessage),
@@ -330,41 +274,54 @@ async function routeAndExecute(userMessage) {
   };
 
   const results = {};
+  const errors = {};
 
-  try {
-    // Fetch relevant data based on detected intents
-    if (actions.business || actions.money || actions.requests || actions.leads) {
-      results.businessOverview = await luminateOS.getBusinessOverview();
-    }
-
-    if (actions.money) {
-      results.financialData = await stripeService.getFinancialSummary();
-    }
-
-    if (actions.email) {
-      results.emails = await gmailService.getUnreadEmails(5);
-    }
-
-    if (actions.sites) {
+  // Each integration is isolated so one outage can't blank out the others, and
+  // the overview is fetched once even when several intents want it.
+  if (intents.business || intents.money || intents.sites || intents.requests || intents.leads) {
+    try {
       const overview = await luminateOS.getBusinessOverview();
-      results.sites = overview.sites.filter(s => s.issues_count > 0).slice(0, 5);
-    }
+      results.businessOverview = overview;
 
-    if (actions.requests) {
-      const overview = await luminateOS.getBusinessOverview();
-      results.requests = overview.requests;
-    }
+      if (intents.sites) {
+        results.sites = (overview.sites || [])
+          .filter(site => site.issues_count > 0)
+          .slice(0, 5);
+      }
 
-    if (actions.leads) {
-      const overview = await luminateOS.getBusinessOverview();
-      results.leads = overview.leads;
-    }
+      if (intents.requests) {
+        results.requests = overview.requests || [];
+      }
 
-    return results;
-  } catch (error) {
-    console.error('Routing error:', error.message);
-    return { error: error.message };
+      if (intents.leads) {
+        results.leads = overview.leads || [];
+      }
+    } catch (error) {
+      errors.luminateOS = error.message;
+    }
   }
+
+  if (intents.money) {
+    try {
+      results.financialData = await stripeService.getFinancialSummary();
+    } catch (error) {
+      errors.stripe = error.message;
+    }
+  }
+
+  if (intents.email) {
+    try {
+      results.emails = await gmailService.getUnreadEmails(5);
+    } catch (error) {
+      errors.gmail = error.message;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    results.errors = errors;
+  }
+
+  return results;
 }
 
 // ============================================
@@ -398,6 +355,7 @@ app.post('/api/chat', async (req, res) => {
     res.json({
       response: claudeResponse,
       data: serviceData,
+      actions: detectActions(message),
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -437,28 +395,6 @@ app.get('/api/email/unread', async (req, res) => {
   try {
     const emails = await gmailService.getUnreadEmails();
     res.json(emails);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * Open Dashboard with Browser Automation
- */
-app.post('/api/browser/dashboard', async (req, res) => {
-  try {
-    const { dashboard } = req.body;
-
-    const dashboards = {
-      stripe: 'https://dashboard.stripe.com',
-      gmail: 'https://mail.google.com',
-      luminateos: 'https://app.luminateos.com'
-    };
-
-    const url = dashboards[dashboard] || dashboard;
-
-    const result = await browserService.openDashboard(url);
-    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -519,7 +455,6 @@ if (!process.env.VERCEL) {
     console.log(`  GET    /api/business/overview       - Get business overview`);
     console.log(`  GET    /api/financial/summary       - Get Stripe financials`);
     console.log(`  GET    /api/email/unread            - Get unread emails`);
-    console.log(`  POST   /api/browser/dashboard       - Open dashboard`);
     console.log(`  GET    /auth/gmail                  - Connect Gmail`);
   });
 }
