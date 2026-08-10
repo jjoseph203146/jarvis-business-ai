@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "JARVIS Hotkey",
+  "version": "1.0",
+  "description": "Global hotkey to jump to JARVIS from any tab and start listening.",
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["https://jarvis-business-ai.vercel.app/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "open-jarvis": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+J",
+        "mac": "Command+Shift+J"
+      },
+      "description": "Open JARVIS and start listening"
+    }
+  }
+}

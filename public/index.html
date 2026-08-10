@@ -402,6 +402,29 @@
             }
         }
 
+        .screen-button {
+            padding: 12px 18px;
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: all 0.3s;
+        }
+
+        .screen-button:hover {
+            background: rgba(0, 212, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+        }
+
+        .screen-button.sharing {
+            background: rgba(0, 255, 0, 0.12);
+            border-color: #00ff00;
+            color: #00ff00;
+            box-shadow: 0 0 12px rgba(0, 255, 0, 0.4);
+        }
+
         .loading-indicator {
             display: inline-block;
             width: 8px;
@@ -534,6 +557,7 @@
             }
 
             .mic-button,
+            .screen-button,
             .send-button {
                 flex: 1;
                 padding: 12px;
@@ -581,6 +605,8 @@
                         autocomplete="off"
                     />
                     <button class="mic-button" id="micButton" title="Talk to JARVIS (or press ` )">🎙️</button>
+                    <button class="screen-button" id="screenButton" title="Share your screen so JARVIS can read it">📺</button>
+                    <button class="screen-button" id="monitorButton" title="Enable opening dashboards on a second monitor">🖥️</button>
                     <button class="send-button" id="sendButton">Send</button>
                 </div>
             </div>
@@ -603,8 +629,13 @@
                 this.arcReactor = document.getElementById('arcReactor');
                 this.statusText = document.getElementById('statusText');
                 this.micButton = document.getElementById('micButton');
+                this.screenButton = document.getElementById('screenButton');
+                this.monitorButton = document.getElementById('monitorButton');
                 this.speakTimeout = null;
                 this.isListening = false;
+                this.screenStream = null;
+                this.screenVideo = null;
+                this.screenDetails = null;
 
                 // Persist a session id so JARVIS keeps conversation context across page reloads
                 this.sessionId = localStorage.getItem('jarvisSessionId') || crypto.randomUUID();
@@ -612,7 +643,113 @@
 
                 this.setupEventListeners();
                 this.setupSpeechRecognition();
+                this.setupScreenSharing();
+                this.setupMultiMonitor();
                 this.loadInitialData();
+            }
+
+            setupMultiMonitor() {
+                if (!('getScreenDetails' in window)) {
+                    this.monitorButton.disabled = true;
+                    this.monitorButton.title = 'Multi-monitor placement needs Chrome or Edge';
+                    return;
+                }
+
+                this.monitorButton.addEventListener('click', async () => {
+                    try {
+                        // Cached once granted, so later dashboard clicks can call
+                        // window.open() synchronously instead of behind another await
+                        // (which browsers would otherwise treat as a blocked popup).
+                        this.screenDetails = await window.getScreenDetails();
+                        const count = this.screenDetails.screens.length;
+                        this.monitorButton.classList.add('sharing');
+                        this.addMessage(
+                            count > 1
+                                ? `Multi-monitor enabled, sir — I'll open dashboards on your second screen.`
+                                : `Only one screen detected — dashboards will open normally until a second is connected.`,
+                            'jarvis'
+                        );
+                    } catch (error) {
+                        this.addMessage('Screen placement permission was denied, sir.', 'jarvis');
+                    }
+                });
+            }
+
+            openDashboard(url) {
+                if (this.screenDetails && this.screenDetails.screens.length > 1) {
+                    const target = this.screenDetails.screens.find(s => !s.isPrimary) || this.screenDetails.screens[1];
+                    const width = target.availWidth || target.width;
+                    const height = target.availHeight || target.height;
+                    window.open(url, '_blank', `left=${target.left},top=${target.top},width=${width},height=${height},noopener,noreferrer`);
+                    return;
+                }
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+
+            setupScreenSharing() {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                    this.screenButton.disabled = true;
+                    this.screenButton.title = 'Screen sharing not supported in this browser';
+                    return;
+                }
+                this.screenButton.addEventListener('click', () => this.captureScreen());
+            }
+
+            // Reuses one screen-share stream for the whole session — the browser's
+            // share picker only appears the first time this is called.
+            async captureScreen() {
+                const messageBefore = this.messageInput.value.trim();
+                this.messageInput.value = '';
+
+                try {
+                    if (!this.screenStream) {
+                        this.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                        this.screenVideo = document.createElement('video');
+                        this.screenVideo.srcObject = this.screenStream;
+                        this.screenVideo.muted = true;
+                        await this.screenVideo.play();
+                        this.screenButton.classList.add('sharing');
+
+                        this.screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                            this.screenStream = null;
+                            this.screenVideo = null;
+                            this.screenButton.classList.remove('sharing');
+                        });
+                    }
+
+                    const question = messageBefore || "What's on my screen? Explain any business stats shown.";
+                    this.addMessage(question, 'user');
+                    this.addMessage('Reading your screen...', 'jarvis');
+                    this.setSpeaking(true);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = this.screenVideo.videoWidth;
+                    canvas.height = this.screenVideo.videoHeight;
+                    canvas.getContext('2d').drawImage(this.screenVideo, 0, 0);
+                    const image = canvas.toDataURL('image/jpeg', 0.7);
+
+                    const response = await fetch(`${API_BASE}/api/vision`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image, question })
+                    });
+                    const result = await response.json();
+
+                    const messages = this.chatMessages.querySelectorAll('.message');
+                    if (messages.length > 0) messages[messages.length - 1].remove();
+
+                    const replyText = result.response || result.error || 'I could not read the screen, sir.';
+                    this.addMessage(replyText, 'jarvis');
+                    this.playVoice(replyText);
+                } catch (error) {
+                    console.error('Screen capture error:', error);
+                    const messages = this.chatMessages.querySelectorAll('.message');
+                    if (messages.length > 0 && messages[messages.length - 1].textContent === 'Reading your screen...') {
+                        messages[messages.length - 1].remove();
+                    }
+                    this.addMessage(`Couldn't read the screen: ${error.message}`, 'jarvis');
+                    this.setSpeaking(false);
+                }
             }
 
             setupSpeechRecognition() {
@@ -844,6 +981,13 @@
                     linkEl.target = '_blank';
                     linkEl.rel = 'noopener noreferrer';
                     linkEl.textContent = `${action.label} ↗`;
+                    // Only intercepted when a second monitor was granted via
+                    // enableMultiMonitor — otherwise this is a plain link click.
+                    linkEl.addEventListener('click', (e) => {
+                        if (!this.screenDetails || this.screenDetails.screens.length < 2) return;
+                        e.preventDefault();
+                        this.openDashboard(action.url);
+                    });
                     containerEl.appendChild(linkEl);
                 });
 
@@ -854,7 +998,10 @@
 
         // Initialize when DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
-            new JARVISClient();
+            const client = new JARVISClient();
+            // Exposed so the JARVIS Hotkey browser extension can start the mic
+            // from any tab (see extension/background.js).
+            window.jarvisStartListening = () => client.toggleListening();
         });
     </script>
 </body>

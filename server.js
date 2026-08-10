@@ -28,7 +28,9 @@ const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// Raised from Express's 100kb default so a base64-encoded screenshot for
+// /api/vision fits in the request body.
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
 // ============================================
@@ -455,6 +457,52 @@ app.post('/api/tts', async (req, res) => {
 });
 
 /**
+ * Screen reading — takes a screenshot (base64 data URL) captured from the
+ * browser's screen-share stream and has Claude describe/analyze it.
+ */
+app.post('/api/vision', async (req, res) => {
+  try {
+    const { image, question } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ error: 'Image required' });
+    }
+
+    const match = image.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ error: 'Image must be a base64 data URL' });
+    }
+    const [, mediaType, base64Data] = match;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-5',
+      max_tokens: 2048,
+      output_config: { effort: 'low' },
+      system: 'You are JARVIS, an AI business assistant. You are looking at a screenshot of the user\'s screen. Describe what you see and answer their question about it — focus on business/financial stats if that\'s what is shown (e.g. Stripe, analytics dashboards). Be concise and speak naturally, as this will be read aloud.',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+            { type: 'text', text: question || 'What do you see on my screen? Explain any business stats shown.' }
+          ]
+        }
+      ]
+    });
+
+    const answer = response.content
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('');
+
+    res.json({ response: answer || 'I could not make out anything useful on the screen, sir.' });
+  } catch (error) {
+    console.error('Vision error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Business Overview
  */
 app.get('/api/business/overview', async (req, res) => {
@@ -543,6 +591,7 @@ if (!process.env.VERCEL) {
     console.log(`API Documentation:`);
     console.log(`  POST   /api/chat                    - Send message to JARVIS`);
     console.log(`  POST   /api/tts                     - Text-to-speech via ElevenLabs`);
+    console.log(`  POST   /api/vision                  - Analyze a screenshot of the user's screen`);
     console.log(`  GET    /api/business/overview       - Get business overview`);
     console.log(`  GET    /api/financial/summary       - Get Stripe financials`);
     console.log(`  GET    /api/email/unread            - Get unread emails`);
