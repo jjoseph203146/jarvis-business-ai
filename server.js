@@ -208,13 +208,35 @@ const stripeService = new StripeService();
 const gmailService = new GmailService();
 
 // ============================================
+// CONVERSATION MEMORY
+// ============================================
+
+// In-memory per-session history so JARVIS has context across turns. Resets
+// on server restart — swap for a persisted store if that becomes a problem.
+const conversations = new Map();
+const MAX_HISTORY_MESSAGES = 20;
+
+function getHistory(sessionId) {
+  if (!sessionId) return [];
+  return conversations.get(sessionId) || [];
+}
+
+function appendHistory(sessionId, role, content) {
+  if (!sessionId) return;
+  const history = conversations.get(sessionId) || [];
+  history.push({ role, content });
+  while (history.length > MAX_HISTORY_MESSAGES) history.shift();
+  conversations.set(sessionId, history);
+}
+
+// ============================================
 // CLAUDE AI ROUTING & UNDERSTANDING
 // ============================================
 
 /**
  * Use Claude to understand the user's prompt and route to the right service
  */
-async function processUserPrompt(userMessage, serviceData = {}) {
+async function processUserPrompt(userMessage, serviceData = {}, history = []) {
   const systemPrompt = `You are JARVIS, an AI business assistant for Jacob's company. You help with:
 1. Business Overview - Access Luminate OS data (sites, financial, requests, leads, security)
 2. Financial Data - Access Stripe earnings, revenue, payments
@@ -257,6 +279,7 @@ Stripe amount is in cents and must be divided by 100 before you quote it.`;
       output_config: { effort: 'low' },
       system: systemPrompt,
       messages: [
+        ...history,
         {
           role: 'user',
           content
@@ -361,15 +384,19 @@ app.get('/health', (req, res) => {
  */
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, sessionId } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message required' });
     }
 
-    // Fetch first so Claude can answer from the real numbers.
+    // Fetch first so Claude can answer from the real numbers, grounded in
+    // this session's prior turns for conversation memory.
     const serviceData = await routeAndExecute(message);
-    const claudeResponse = await processUserPrompt(message, serviceData);
+    const history = getHistory(sessionId);
+    const claudeResponse = await processUserPrompt(message, serviceData, history);
+    appendHistory(sessionId, 'user', message);
+    appendHistory(sessionId, 'assistant', claudeResponse);
 
     res.json({
       response: claudeResponse,
@@ -380,6 +407,50 @@ app.post('/api/chat', async (req, res) => {
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Text-to-speech via ElevenLabs — returns MP3 audio for the given text.
+ * Requires ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to be set.
+ */
+app.post('/api/tts', async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ error: 'Text required' });
+    }
+
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const voiceId = process.env.ELEVENLABS_VOICE_ID;
+
+    if (!apiKey || !voiceId) {
+      return res.status(503).json({ error: 'ElevenLabs voice not configured' });
+    }
+
+    const response = await axios.post(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        text,
+        model_id: 'eleven_turbo_v2_5',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      },
+      {
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg'
+        },
+        responseType: 'arraybuffer'
+      }
+    );
+
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(Buffer.from(response.data));
+  } catch (error) {
+    console.error('ElevenLabs TTS error:', error.response?.data?.toString() || error.message);
+    res.status(500).json({ error: 'TTS generation failed' });
   }
 });
 
@@ -471,6 +542,7 @@ if (!process.env.VERCEL) {
   `);
     console.log(`API Documentation:`);
     console.log(`  POST   /api/chat                    - Send message to JARVIS`);
+    console.log(`  POST   /api/tts                     - Text-to-speech via ElevenLabs`);
     console.log(`  GET    /api/business/overview       - Get business overview`);
     console.log(`  GET    /api/financial/summary       - Get Stripe financials`);
     console.log(`  GET    /api/email/unread            - Get unread emails`);
