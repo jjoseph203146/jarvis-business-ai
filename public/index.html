@@ -365,6 +365,43 @@
             transform: scale(0.95);
         }
 
+        .mic-button {
+            padding: 12px 18px;
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: all 0.3s;
+        }
+
+        .mic-button:hover {
+            background: rgba(0, 212, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+        }
+
+        .mic-button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .mic-button.listening {
+            background: rgba(255, 45, 85, 0.15);
+            border-color: #ff2d55;
+            color: #ff2d55;
+            animation: mic-pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes mic-pulse {
+            0%, 100% {
+                box-shadow: 0 0 8px rgba(255, 45, 85, 0.4);
+            }
+            50% {
+                box-shadow: 0 0 22px rgba(255, 45, 85, 0.9);
+            }
+        }
+
         .loading-indicator {
             display: inline-block;
             width: 8px;
@@ -489,11 +526,16 @@
             }
 
             .input-area {
-                flex-direction: column;
+                flex-wrap: wrap;
             }
 
+            .input-area input {
+                flex: 1 1 100%;
+            }
+
+            .mic-button,
             .send-button {
-                width: 100%;
+                flex: 1;
                 padding: 12px;
             }
 
@@ -538,6 +580,7 @@
                         placeholder="Speak your mind, sir..."
                         autocomplete="off"
                     />
+                    <button class="mic-button" id="micButton" title="Talk to JARVIS">🎙️</button>
                     <button class="send-button" id="sendButton">Send</button>
                 </div>
             </div>
@@ -559,10 +602,90 @@
                 this.dataPanel = document.getElementById('dataPanel');
                 this.arcReactor = document.getElementById('arcReactor');
                 this.statusText = document.getElementById('statusText');
+                this.micButton = document.getElementById('micButton');
                 this.speakTimeout = null;
+                this.isListening = false;
+
+                // Persist a session id so JARVIS keeps conversation context across page reloads
+                this.sessionId = localStorage.getItem('jarvisSessionId') || crypto.randomUUID();
+                localStorage.setItem('jarvisSessionId', this.sessionId);
 
                 this.setupEventListeners();
+                this.setupSpeechRecognition();
                 this.loadInitialData();
+            }
+
+            setupSpeechRecognition() {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+                if (!SpeechRecognition) {
+                    this.micButton.disabled = true;
+                    this.micButton.title = 'Voice input not supported in this browser';
+                    return;
+                }
+
+                this.recognition = new SpeechRecognition();
+                this.recognition.continuous = false;
+                this.recognition.interimResults = false;
+                this.recognition.lang = 'en-US';
+
+                this.recognition.addEventListener('result', (e) => {
+                    this.messageInput.value = e.results[0][0].transcript;
+                    this.sendMessage();
+                });
+
+                this.recognition.addEventListener('end', () => {
+                    this.isListening = false;
+                    this.micButton.classList.remove('listening');
+                });
+
+                this.recognition.addEventListener('error', (e) => {
+                    console.error('Speech recognition error:', e.error);
+                    this.isListening = false;
+                    this.micButton.classList.remove('listening');
+                });
+
+                this.micButton.addEventListener('click', () => {
+                    if (this.isListening) {
+                        this.recognition.stop();
+                        return;
+                    }
+                    this.isListening = true;
+                    this.micButton.classList.add('listening');
+                    this.recognition.start();
+                });
+            }
+
+            // Plays JARVIS's reply through ElevenLabs and keeps the reactor "speaking"
+            // for the duration of actual playback; falls back to a timed pulse if
+            // ElevenLabs isn't configured yet.
+            async playVoice(text) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/tts`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text })
+                    });
+
+                    if (!response.ok) throw new Error('TTS unavailable');
+
+                    const audioUrl = URL.createObjectURL(await response.blob());
+                    const audio = new Audio(audioUrl);
+
+                    const stop = () => {
+                        this.setSpeaking(false);
+                        URL.revokeObjectURL(audioUrl);
+                    };
+
+                    audio.addEventListener('ended', stop);
+                    audio.addEventListener('error', stop);
+
+                    this.setSpeaking(true);
+                    await audio.play();
+                } catch (error) {
+                    const fallbackDuration = Math.min(6000, Math.max(1200, text.length * 40));
+                    this.setSpeaking(true, fallbackDuration);
+                }
             }
 
             setSpeaking(active, durationMs) {
@@ -652,7 +775,7 @@
                     const response = await fetch(`${API_BASE}/api/chat`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message })
+                        body: JSON.stringify({ message, sessionId: this.sessionId })
                     });
 
                     const result = await response.json();
@@ -667,10 +790,7 @@
                     const replyText = result.response || 'Processing complete.';
                     this.addMessage(replyText, 'jarvis');
                     this.addActions(result.actions);
-
-                    // Keep the reactor "talking" roughly as long as the reply would take to speak
-                    const speakDuration = Math.min(6000, Math.max(1200, replyText.length * 40));
-                    this.setSpeaking(true, speakDuration);
+                    this.playVoice(replyText);
 
                     // Update data panel if new data available
                     if (result.data) {
