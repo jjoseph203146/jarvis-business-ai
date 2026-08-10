@@ -3,11 +3,18 @@
   "name": "JARVIS Hotkey",
   "version": "1.0",
   "description": "Global hotkey to jump to JARVIS from any tab and start listening.",
-  "permissions": ["tabs", "scripting"],
+  "permissions": ["tabs", "scripting", "system.display"],
   "host_permissions": ["https://jarvis-business-ai.vercel.app/*"],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://jarvis-business-ai.vercel.app/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
   "commands": {
     "open-jarvis": {
       "suggested_key": {

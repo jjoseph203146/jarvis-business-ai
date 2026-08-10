@@ -966,21 +966,37 @@
                 this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
             }
 
-            // Rendered as real links rather than window.open() calls, which
-            // browsers block once the click handler has awaited a fetch.
+            // Extensions can open/position tabs without a click — a plain
+            // webpage can't (browsers block window.open() once a click handler
+            // has awaited a fetch). The JARVIS Hotkey extension's content
+            // script marks the page so we know it can do this for us.
+            hasExtension() {
+                return document.documentElement.dataset.jarvisExtension === 'true';
+            }
+
+            requestExtensionOpen(url) {
+                window.postMessage({ type: 'jarvis-open-dashboard', url }, window.location.origin);
+            }
+
+            // Rendered as real links (manual-click fallback) as well as
+            // auto-requested through the extension when it's installed, so
+            // "open Stripe" actually opens with no click needed.
             addActions(actions) {
                 if (!actions || actions.length === 0) return;
 
                 const containerEl = document.createElement('div');
                 containerEl.className = 'message-actions';
+                const extensionAvailable = this.hasExtension();
 
                 actions.forEach(action => {
+                    if (extensionAvailable) this.requestExtensionOpen(action.url);
+
                     const linkEl = document.createElement('a');
                     linkEl.className = 'action-btn';
                     linkEl.href = action.url;
                     linkEl.target = '_blank';
                     linkEl.rel = 'noopener noreferrer';
-                    linkEl.textContent = `${action.label} ↗`;
+                    linkEl.textContent = extensionAvailable ? `${action.label} (opened) ↗` : `${action.label} ↗`;
                     // Only intercepted when a second monitor was granted via
                     // enableMultiMonitor — otherwise this is a plain link click.
                     linkEl.addEventListener('click', (e) => {
