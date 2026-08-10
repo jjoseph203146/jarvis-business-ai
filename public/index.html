@@ -580,7 +580,7 @@
                         placeholder="Speak your mind, sir..."
                         autocomplete="off"
                     />
-                    <button class="mic-button" id="micButton" title="Talk to JARVIS">🎙️</button>
+                    <button class="mic-button" id="micButton" title="Talk to JARVIS (or press ` )">🎙️</button>
                     <button class="send-button" id="sendButton">Send</button>
                 </div>
             </div>
@@ -645,15 +645,26 @@
                     this.micButton.classList.remove('listening');
                 });
 
-                this.micButton.addEventListener('click', () => {
-                    if (this.isListening) {
-                        this.recognition.stop();
-                        return;
-                    }
-                    this.isListening = true;
-                    this.micButton.classList.add('listening');
-                    this.recognition.start();
+                this.micButton.addEventListener('click', () => this.toggleListening());
+
+                // Backtick toggles the mic from anywhere on the page — hands-free
+                // start/stop without reaching for the button.
+                document.addEventListener('keydown', (e) => {
+                    if (e.key !== '`' || e.repeat) return;
+                    e.preventDefault();
+                    this.toggleListening();
                 });
+            }
+
+            toggleListening() {
+                if (!this.recognition) return;
+                if (this.isListening) {
+                    this.recognition.stop();
+                    return;
+                }
+                this.isListening = true;
+                this.micButton.classList.add('listening');
+                this.recognition.start();
             }
 
             // Plays JARVIS's reply through ElevenLabs and keeps the reactor "speaking"
@@ -667,7 +678,10 @@
                         body: JSON.stringify({ text })
                     });
 
-                    if (!response.ok) throw new Error('TTS unavailable');
+                    if (!response.ok) {
+                        const body = await response.json().catch(() => ({}));
+                        throw new Error(body.error || `TTS request failed (${response.status})`);
+                    }
 
                     const audioUrl = URL.createObjectURL(await response.blob());
                     const audio = new Audio(audioUrl);
@@ -683,6 +697,7 @@
                     this.setSpeaking(true);
                     await audio.play();
                 } catch (error) {
+                    console.warn('JARVIS voice unavailable, falling back to a silent pulse:', error.message);
                     const fallbackDuration = Math.min(6000, Math.max(1200, text.length * 40));
                     this.setSpeaking(true, fallbackDuration);
                 }
