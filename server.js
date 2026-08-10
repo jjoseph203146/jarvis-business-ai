@@ -451,8 +451,10 @@ app.post('/api/tts', async (req, res) => {
     res.set('Content-Type', 'audio/mpeg');
     res.send(Buffer.from(response.data));
   } catch (error) {
-    console.error('ElevenLabs TTS error:', error.response?.data?.toString() || error.message);
-    res.status(500).json({ error: 'TTS generation failed' });
+    const detail = error.response?.data?.toString() || error.message;
+    console.error('ElevenLabs TTS error:', detail);
+    // Surfaced to the client (not just server logs) so this is diagnosable via curl.
+    res.status(500).json({ error: 'TTS generation failed', detail });
   }
 });
 
