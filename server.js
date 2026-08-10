@@ -75,20 +75,50 @@ class LuminateOSService {
  * Stripe Service
  */
 class StripeService {
+  constructor() {
+    // Tracks the newest charge id already surfaced to the user, so future
+    // checks can report only what's NEW instead of re-listing the same
+    // handful of charges every time. Resets on cold start, same tradeoff as
+    // the conversation memory above.
+    this.lastSeenChargeId = null;
+  }
+
   async getFinancialSummary() {
     try {
       const balance = await stripe.balance.retrieve();
       const charges = await stripe.charges.list({ limit: 50 });
 
-      // Stripe reports every amount in minor units. Summary figures are
-      // normalised to dollars so nothing downstream has to guess which is which.
+      // Stripe reports every amount in minor units, and its raw charge
+      // objects are mostly noise (payment_method_details, outcome, etc.) —
+      // trim to what's actually useful to read out loud.
       const toDollars = cents => Math.round(cents) / 100;
       const sumAmounts = funds => funds.reduce((total, fund) => total + fund.amount, 0);
+
+      const summarizeCharge = charge => ({
+        id: charge.id,
+        amountUsd: toDollars(charge.amount),
+        customer: charge.billing_details?.name || charge.receipt_email || 'Unknown',
+        description: charge.description || (charge.invoice ? 'Invoice payment' : 'Subscription charge'),
+        status: charge.paid ? 'succeeded' : 'failed',
+        failureReason: charge.failure_message || null,
+        createdAt: new Date(charge.created * 1000).toISOString()
+      });
+
+      const allCharges = charges.data.map(summarizeCharge);
+      const isFirstCheck = this.lastSeenChargeId === null;
+      const lastSeenIndex = isFirstCheck
+        ? -1
+        : charges.data.findIndex(c => c.id === this.lastSeenChargeId);
+      const newCharges = lastSeenIndex === -1 ? [] : allCharges.slice(0, lastSeenIndex);
+      this.lastSeenChargeId = charges.data[0]?.id || this.lastSeenChargeId;
 
       return {
         available: balance.available,
         pending: balance.pending,
-        recentCharges: charges.data.slice(0, 10),
+        recentCharges: allCharges.slice(0, 10),
+        // null = this is the first check this session, so there's no
+        // baseline yet — treat recentCharges as a normal snapshot instead.
+        newChargesSinceLastCheck: isFirstCheck ? null : newCharges,
         summary: {
           currency: 'usd',
           availableBalanceUsd: toDollars(sumAmounts(balance.available)),
@@ -261,6 +291,16 @@ actually brief someone out loud — never in writing-for-the-page style:
 - Only give a full itemized breakdown (every charge, every row) when the
   user explicitly asks for the details, the list, or "everything."
 - Skip preambles like "Here's your breakdown" — just say the useful part.
+
+If financialData.newChargesSinceLastCheck is present (not null), the user
+already heard about everything in recentCharges on a previous check this
+session — do not re-mention those older ones. Report only what's in
+newChargesSinceLastCheck: if it's empty, say plainly that nothing new has
+come in since you last checked (one short sentence, don't restate old
+numbers); if it has entries, describe just those. Only fall back to the
+full recentCharges list if the user explicitly asks for history or "all of
+it." If newChargesSinceLastCheck is null, this is the first check this
+session, so summarize recentCharges normally as in the example above.
 
 Be professional but friendly. Always provide actionable insights when they're
 genuinely useful, but don't force a "next steps" list onto every reply.
