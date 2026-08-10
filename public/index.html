@@ -807,38 +807,57 @@
 
             // Plays JARVIS's reply through ElevenLabs and keeps the reactor "speaking"
             // for the duration of actual playback; falls back to a timed pulse if
-            // ElevenLabs isn't configured yet.
-            async playVoice(text) {
-                try {
-                    const response = await fetch(`${API_BASE}/api/tts`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text })
-                    });
+            // ElevenLabs isn't configured yet. Resolves once playback (or the
+            // fallback pulse) finishes, so callers can sequence multiple segments.
+            playVoice(text) {
+                return new Promise(async (resolve) => {
+                    try {
+                        const response = await fetch(`${API_BASE}/api/tts`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text })
+                        });
 
-                    if (!response.ok) {
-                        const body = await response.json().catch(() => ({}));
-                        throw new Error(body.error || `TTS request failed (${response.status})`);
+                        if (!response.ok) {
+                            const body = await response.json().catch(() => ({}));
+                            throw new Error(body.error || `TTS request failed (${response.status})`);
+                        }
+
+                        const audioUrl = URL.createObjectURL(await response.blob());
+                        const audio = new Audio(audioUrl);
+                        audio.playbackRate = this.voiceSpeed;
+
+                        const finish = () => {
+                            this.setSpeaking(false);
+                            URL.revokeObjectURL(audioUrl);
+                            resolve();
+                        };
+
+                        audio.addEventListener('ended', finish);
+                        audio.addEventListener('error', finish);
+
+                        this.setSpeaking(true);
+                        await audio.play();
+                    } catch (error) {
+                        console.warn('JARVIS voice unavailable, falling back to a silent pulse:', error.message);
+                        const fallbackDuration = Math.min(6000, Math.max(1200, text.length * 40));
+                        this.setSpeaking(true, fallbackDuration);
+                        setTimeout(resolve, fallbackDuration);
                     }
+                });
+            }
 
-                    const audioUrl = URL.createObjectURL(await response.blob());
-                    const audio = new Audio(audioUrl);
-                    audio.playbackRate = this.voiceSpeed;
-
-                    const stop = () => {
-                        this.setSpeaking(false);
-                        URL.revokeObjectURL(audioUrl);
-                    };
-
-                    audio.addEventListener('ended', stop);
-                    audio.addEventListener('error', stop);
-
-                    this.setSpeaking(true);
-                    await audio.play();
-                } catch (error) {
-                    console.warn('JARVIS voice unavailable, falling back to a silent pulse:', error.message);
-                    const fallbackDuration = Math.min(6000, Math.max(1200, text.length * 40));
-                    this.setSpeaking(true, fallbackDuration);
+            // Speaks each topic segment in order, opening that segment's dashboard
+            // (if any) right as it starts talking about it, instead of dumping
+            // every message and every dashboard open all at once.
+            async narrateSegments(segments) {
+                for (const segment of segments) {
+                    if (!segment.text) continue;
+                    this.addMessage(segment.text, 'jarvis');
+                    if (segment.dashboard) {
+                        this.addActions([segment.dashboard]);
+                    }
+                    await this.playVoice(segment.text);
                 }
             }
 
@@ -940,11 +959,13 @@
                         messages[messages.length - 1].remove();
                     }
 
-                    // Add JARVIS response
+                    // Add JARVIS response — narrated segment by segment so each
+                    // dashboard opens exactly when JARVIS starts talking about it.
                     const replyText = result.response || 'Processing complete.';
-                    this.addMessage(replyText, 'jarvis');
-                    this.addActions(result.actions);
-                    this.playVoice(replyText);
+                    const segments = (result.segments && result.segments.length > 0)
+                        ? result.segments
+                        : [{ text: replyText, dashboard: null }];
+                    this.narrateSegments(segments);
 
                     // Update data panel if new data available
                     if (result.data) {

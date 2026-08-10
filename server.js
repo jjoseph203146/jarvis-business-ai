@@ -231,6 +231,50 @@ function detectActions(userMessage) {
     .map(({ label, url }) => ({ label, url }));
 }
 
+/**
+ * Splits JARVIS's reply into per-topic segments so the frontend can open the
+ * matching dashboard exactly when the narration reaches that topic, instead
+ * of opening everything at once up front. Each dashboard only triggers once
+ * per reply, on its first mention.
+ */
+function segmentResponseByTopic(text) {
+  const sentences = text.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [text];
+  const topicOf = (sentence) => {
+    const lower = sentence.toLowerCase();
+    if (PATTERNS.money.test(lower)) return 'money';
+    if (PATTERNS.email.test(lower)) return 'email';
+    if (PATTERNS.business.test(lower)) return 'business';
+    return null;
+  };
+
+  const segments = [];
+  const openedTopics = new Set();
+
+  for (const raw of sentences) {
+    const sentence = raw.trim();
+    if (!sentence) continue;
+
+    const topic = topicOf(sentence);
+    let dashboard = null;
+    if (topic && !openedTopics.has(topic)) {
+      const match = DASHBOARDS.find(d => d.match === PATTERNS[topic]);
+      if (match) {
+        dashboard = { label: match.label, url: match.url };
+        openedTopics.add(topic);
+      }
+    }
+
+    const last = segments[segments.length - 1];
+    if (last && last.topic === topic && !dashboard) {
+      last.text += ' ' + sentence;
+    } else {
+      segments.push({ text: sentence, topic, dashboard });
+    }
+  }
+
+  return segments.map(({ text: segmentText, dashboard }) => ({ text: segmentText, dashboard }));
+}
+
 // Initialize services
 const luminateOS = new LuminateOSService(
   process.env.LUMINATE_OS_API_KEY,
@@ -305,6 +349,20 @@ session, so summarize recentCharges normally as in the example above.
 Be professional but friendly. Always provide actionable insights when they're
 genuinely useful, but don't force a "next steps" list onto every reply.
 
+When Luminate OS data (requests, leads, sites) is present — especially for
+open-ended questions like "what should I work on" or "any ideas" — proactively
+flag anything that looks new or unstarted (no assigned status, just came in,
+nobody's touched it) and name it specifically, e.g. "there's a new request
+from Florida Tennis Family for a new feature — nobody's started it yet."
+For a feature/build request like that, offer a concrete next step: ask if
+they want you to have Claude Code look at the codebase and draft some
+architecture options for it. You do NOT have codebase access yourself in
+this chat — you're a business-data assistant, not a coding agent. If the
+user says yes to that offer, don't pretend to go do it; tell them plainly
+that they'll need to ask you this in their Claude Code session/terminal to
+actually kick it off, and offer to summarize what needs to be built so
+they can hand it off easily.
+
 When a "Live data" block accompanies the question, it was fetched from the
 real integrations moments ago — answer from those numbers and cite them
 directly. Never claim you lack a live connection to a service whose data is
@@ -360,7 +418,7 @@ async function routeAndExecute(userMessage) {
   const lowerMessage = userMessage.toLowerCase();
 
   const intents = {
-    business: /business|overview|summary|dashboard|how.*doing/.test(lowerMessage),
+    business: /business|overview|summary|dashboard|how.*doing|ideas|opportunit|priorit|to-?do|what.*(work on|should i)|what'?s going on|anything (new|i should)/.test(lowerMessage),
     money: PATTERNS.money.test(lowerMessage),
     email: PATTERNS.email.test(lowerMessage),
     sites: /site|website|security|status|issue|problem/.test(lowerMessage),
@@ -453,6 +511,7 @@ app.post('/api/chat', async (req, res) => {
       response: claudeResponse,
       data: serviceData,
       actions: detectActions(message),
+      segments: segmentResponseByTopic(claudeResponse),
       timestamp: new Date().toISOString()
     });
   } catch (error) {
