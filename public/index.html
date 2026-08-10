@@ -636,6 +636,7 @@
                 this.screenStream = null;
                 this.screenVideo = null;
                 this.screenDetails = null;
+                this.voiceSpeed = parseFloat(localStorage.getItem('jarvisVoiceSpeed')) || 1.2;
 
                 // Persist a session id so JARVIS keeps conversation context across page reloads
                 this.sessionId = localStorage.getItem('jarvisSessionId') || crypto.randomUUID();
@@ -822,6 +823,7 @@
 
                     const audioUrl = URL.createObjectURL(await response.blob());
                     const audio = new Audio(audioUrl);
+                    audio.playbackRate = this.voiceSpeed;
 
                     const stop = () => {
                         this.setSpeaking(false);
