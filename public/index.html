@@ -39,25 +39,15 @@
         }
 
         .header {
-            padding: 30px;
+            padding: 20px;
             text-align: center;
             border-bottom: 2px solid rgba(0, 212, 255, 0.3);
             box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
         }
 
-        .jarvis-title {
-            font-size: 2.5em;
-            font-weight: 300;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            color: #00d4ff;
-            text-shadow: 0 0 20px rgba(0, 212, 255, 0.6), 0 0 40px rgba(0, 212, 255, 0.3);
-            animation: glow 3s ease-in-out infinite;
-        }
-
         .status {
             font-size: 0.9em;
-            margin-top: 10px;
+            margin-top: 12px;
             color: #00b8cc;
             letter-spacing: 2px;
         }
@@ -68,21 +58,147 @@
             animation: pulse 1s infinite;
         }
 
-        @keyframes glow {
-            0%, 100% {
-                text-shadow: 0 0 20px rgba(0, 212, 255, 0.6), 0 0 40px rgba(0, 212, 255, 0.3);
-            }
-            50% {
-                text-shadow: 0 0 30px rgba(0, 212, 255, 0.8), 0 0 50px rgba(0, 212, 255, 0.5);
-            }
-        }
-
         @keyframes pulse {
             0%, 100% {
                 opacity: 1;
             }
             50% {
                 opacity: 0.5;
+            }
+        }
+
+        /* Arc reactor HUD */
+        .arc-reactor {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            margin: 0 auto;
+        }
+
+        .arc-reactor .ring-outer,
+        .arc-reactor .ring-outer-2,
+        .arc-reactor .ring-ticks,
+        .arc-reactor .ring-mid,
+        .arc-reactor .ring-core {
+            position: absolute;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .arc-reactor .ring-outer {
+            width: 100%;
+            height: 100%;
+            border: 1px solid rgba(0, 212, 255, 0.35);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.25), inset 0 0 20px rgba(0, 212, 255, 0.1);
+        }
+
+        .arc-reactor .ring-outer-2 {
+            width: 86%;
+            height: 86%;
+            border: 2px dashed rgba(0, 212, 255, 0.55);
+            animation: spin-cw 14s linear infinite;
+        }
+
+        .arc-reactor .ring-ticks {
+            width: 62%;
+            height: 62%;
+            background:
+                repeating-conic-gradient(
+                    rgba(0, 212, 255, 0.9) 0deg 3deg,
+                    transparent 3deg 18deg
+                );
+            -webkit-mask: radial-gradient(circle, transparent 62%, #000 63%, #000 78%, transparent 79%);
+            mask: radial-gradient(circle, transparent 62%, #000 63%, #000 78%, transparent 79%);
+            animation: spin-ccw 10s linear infinite;
+        }
+
+        .arc-reactor .ring-mid {
+            width: 68%;
+            height: 68%;
+            background: radial-gradient(circle at 50% 45%, rgba(0, 212, 255, 0.55), rgba(0, 120, 180, 0.25) 60%, transparent 75%);
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.6), 0 0 60px rgba(0, 212, 255, 0.3);
+            animation: reactor-pulse 3s ease-in-out infinite;
+        }
+
+        .arc-reactor .ring-core {
+            width: 42%;
+            height: 42%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 50% 40%, #0a3a3a, #041a1e 75%);
+            border: 1px solid rgba(0, 255, 210, 0.6);
+            box-shadow: 0 0 18px rgba(0, 255, 210, 0.5), inset 0 0 12px rgba(0, 255, 210, 0.3);
+        }
+
+        .arc-reactor .ring-core span {
+            font-size: 0.72em;
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #7fffe0;
+            text-shadow: 0 0 10px rgba(0, 255, 210, 0.8);
+        }
+
+        @keyframes spin-cw {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes spin-ccw {
+            from { transform: translate(-50%, -50%) rotate(360deg); }
+            to { transform: translate(-50%, -50%) rotate(0deg); }
+        }
+
+        @keyframes reactor-pulse {
+            0%, 100% {
+                opacity: 0.75;
+                transform: translate(-50%, -50%) scale(1);
+            }
+            50% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.05);
+            }
+        }
+
+        /* Speaking state: reactor pulses faster/brighter while JARVIS responds */
+        .arc-reactor.speaking .ring-outer-2 {
+            animation-duration: 4s;
+        }
+
+        .arc-reactor.speaking .ring-ticks {
+            animation-duration: 2.5s;
+        }
+
+        .arc-reactor.speaking .ring-mid {
+            animation: reactor-speak 0.6s ease-in-out infinite;
+        }
+
+        .arc-reactor.speaking .ring-core {
+            animation: core-speak 0.6s ease-in-out infinite;
+        }
+
+        @keyframes reactor-speak {
+            0%, 100% {
+                opacity: 0.85;
+                transform: translate(-50%, -50%) scale(1);
+                box-shadow: 0 0 30px rgba(0, 212, 255, 0.6), 0 0 60px rgba(0, 212, 255, 0.3);
+            }
+            50% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.12);
+                box-shadow: 0 0 45px rgba(0, 212, 255, 0.9), 0 0 90px rgba(0, 212, 255, 0.5);
+            }
+        }
+
+        @keyframes core-speak {
+            0%, 100% {
+                box-shadow: 0 0 18px rgba(0, 255, 210, 0.5), inset 0 0 12px rgba(0, 255, 210, 0.3);
+            }
+            50% {
+                box-shadow: 0 0 32px rgba(0, 255, 210, 0.9), inset 0 0 20px rgba(0, 255, 210, 0.6);
             }
         }
 
@@ -335,9 +451,9 @@
                 padding: 16px;
             }
 
-            .jarvis-title {
-                font-size: 1.5em;
-                letter-spacing: 2px;
+            .arc-reactor {
+                width: 100px;
+                height: 100px;
             }
 
             .status {
@@ -397,8 +513,14 @@
         <div class="hologram-grid"></div>
 
         <div class="header">
-            <div class="jarvis-title">⬡ JARVIS ⬡</div>
-            <div class="status active">SYSTEM ONLINE</div>
+            <div class="arc-reactor" id="arcReactor">
+                <div class="ring-outer"></div>
+                <div class="ring-outer-2"></div>
+                <div class="ring-ticks"></div>
+                <div class="ring-mid"></div>
+                <div class="ring-core"><span>Jarvis</span></div>
+            </div>
+            <div class="status active" id="statusText">SYSTEM ONLINE</div>
         </div>
 
         <div class="main-content">
@@ -435,9 +557,21 @@
                 this.messageInput = document.getElementById('messageInput');
                 this.sendButton = document.getElementById('sendButton');
                 this.dataPanel = document.getElementById('dataPanel');
+                this.arcReactor = document.getElementById('arcReactor');
+                this.statusText = document.getElementById('statusText');
+                this.speakTimeout = null;
 
                 this.setupEventListeners();
                 this.loadInitialData();
+            }
+
+            setSpeaking(active, durationMs) {
+                clearTimeout(this.speakTimeout);
+                this.arcReactor.classList.toggle('speaking', active);
+                this.statusText.textContent = active ? 'RESPONDING...' : 'SYSTEM ONLINE';
+                if (active && durationMs) {
+                    this.speakTimeout = setTimeout(() => this.setSpeaking(false), durationMs);
+                }
             }
 
             setupEventListeners() {
@@ -512,6 +646,7 @@
 
                 // Show loading indicator
                 this.addMessage('Processing...', 'jarvis');
+                this.setSpeaking(true);
 
                 try {
                     const response = await fetch(`${API_BASE}/api/chat`, {
@@ -529,8 +664,13 @@
                     }
 
                     // Add JARVIS response
-                    this.addMessage(result.response || 'Processing complete.', 'jarvis');
+                    const replyText = result.response || 'Processing complete.';
+                    this.addMessage(replyText, 'jarvis');
                     this.addActions(result.actions);
+
+                    // Keep the reactor "talking" roughly as long as the reply would take to speak
+                    const speakDuration = Math.min(6000, Math.max(1200, replyText.length * 40));
+                    this.setSpeaking(true, speakDuration);
 
                     // Update data panel if new data available
                     if (result.data) {
@@ -542,6 +682,7 @@
                         messages[messages.length - 1].remove();
                     }
                     this.addMessage(`Error: ${error.message}`, 'jarvis');
+                    this.setSpeaking(false);
                 }
             }
 
