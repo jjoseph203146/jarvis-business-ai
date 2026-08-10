@@ -17,12 +17,19 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Gmail OAuth2 setup
+// Gmail OAuth2 setup. On Vercel each request can hit a fresh serverless
+// instance, so a token set via oauth2Client.setCredentials() in one request
+// (the OAuth callback) would be gone by the next — same env-var pattern as
+// the other integrations, so the refresh token survives across invocations.
 const oauth2Client = new google.auth.OAuth2(
   process.env.GMAIL_CLIENT_ID,
   process.env.GMAIL_CLIENT_SECRET,
   process.env.GMAIL_REDIRECT_URL || 'http://localhost:3001/auth/gmail/callback'
 );
+
+if (process.env.GMAIL_REFRESH_TOKEN) {
+  oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
+}
 
 const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
@@ -659,6 +666,10 @@ app.get('/auth/gmail', (req, res) => {
 
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
+    // Forces Google to reissue a refresh_token even if this Google account
+    // already granted access before — without this, a repeat authorization
+    // only returns an access_token, and there's nothing to persist.
+    prompt: 'consent',
     scope: scopes
   });
 
@@ -666,7 +677,9 @@ app.get('/auth/gmail', (req, res) => {
 });
 
 /**
- * Gmail OAuth Callback
+ * Gmail OAuth Callback — shows the refresh_token in a copy-pasteable form so
+ * it can be saved as GMAIL_REFRESH_TOKEN (Vercel env var / local .env).
+ * That's what makes the connection persist; nothing here is stored server-side.
  */
 app.get('/auth/gmail/callback', async (req, res) => {
   try {
@@ -674,11 +687,26 @@ app.get('/auth/gmail/callback', async (req, res) => {
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
-    res.json({
-      success: true,
-      message: 'Gmail connected successfully',
-      tokens
-    });
+    if (!tokens.refresh_token) {
+      return res.status(200).send(`
+        <pre>No refresh_token was returned (Google only issues one on the first
+consent for an account, or when prompt=consent is forced).
+
+If you've connected this before, revoke JARVIS's access at
+https://myaccount.google.com/permissions and try /auth/gmail again.</pre>
+      `);
+    }
+
+    res.set('Content-Type', 'text/html');
+    res.send(`
+      <div style="font-family: monospace; padding: 24px; max-width: 700px;">
+        <h2>Gmail connected ✅</h2>
+        <p>Copy this value into your <code>GMAIL_REFRESH_TOKEN</code> environment
+        variable (Vercel: Settings → Environment Variables; locally: your <code>.env</code>),
+        then redeploy. This is the only time it's shown.</p>
+        <textarea readonly style="width:100%; height:80px;" onclick="this.select()">${tokens.refresh_token}</textarea>
+      </div>
+    `);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
