@@ -967,6 +967,13 @@
                         : [{ text: replyText, dashboard: null }];
                     this.narrateSegments(segments);
 
+                    // Topics the user asked about but that never matched any
+                    // sentence's wording — still open, just without a narrated
+                    // moment tied to them.
+                    if (result.fallbackDashboards && result.fallbackDashboards.length > 0) {
+                        this.addActions(result.fallbackDashboards);
+                    }
+
                     // Update data panel if new data available
                     if (result.data) {
                         this.displayDataPanel(result.data.businessOverview || {});

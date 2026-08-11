@@ -293,7 +293,20 @@ function segmentResponseByTopic(text, allowedTopics) {
     }
   }
 
-  return segments.map(({ text: segmentText, dashboard }) => ({ text: segmentText, dashboard }));
+  // A topic the user explicitly asked about doesn't always show up in the
+  // reply's literal wording (e.g. "both your properties are fine" never
+  // says "site"), so anything asked-for but never matched still opens —
+  // silently, with no extra chat bubble — instead of just not opening.
+  const missedDashboards = [...allowedTopics]
+    .filter(topic => !openedTopics.has(topic))
+    .map(topic => DASHBOARDS.find(d => d.match === PATTERNS[topic]))
+    .filter(Boolean)
+    .map(({ label, url }) => ({ label, url }));
+
+  return {
+    segments: segments.map(({ text: segmentText, dashboard }) => ({ text: segmentText, dashboard })),
+    fallbackDashboards: missedDashboards
+  };
 }
 
 // Initialize services
@@ -528,11 +541,14 @@ app.post('/api/chat', async (req, res) => {
     appendHistory(sessionId, 'user', message);
     appendHistory(sessionId, 'assistant', claudeResponse);
 
+    const { segments, fallbackDashboards } = segmentResponseByTopic(claudeResponse, detectTopics(message));
+
     res.json({
       response: claudeResponse,
       data: serviceData,
       actions: detectActions(message),
-      segments: segmentResponseByTopic(claudeResponse, detectTopics(message)),
+      segments,
+      fallbackDashboards,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
