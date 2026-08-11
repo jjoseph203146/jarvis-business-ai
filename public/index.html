@@ -607,6 +607,7 @@
                     <button class="mic-button" id="micButton" title="Talk to JARVIS (or press ` )">🎙️</button>
                     <button class="screen-button" id="screenButton" title="Share your screen so JARVIS can read it">📺</button>
                     <button class="screen-button" id="monitorButton" title="Enable opening dashboards on a second monitor">🖥️</button>
+                    <button class="screen-button" id="wakeWordButton" title="Enable &quot;Hey JARVIS&quot; wake word (this tab must stay open)">👂</button>
                     <button class="send-button" id="sendButton">Send</button>
                 </div>
             </div>
@@ -631,8 +632,11 @@
                 this.micButton = document.getElementById('micButton');
                 this.screenButton = document.getElementById('screenButton');
                 this.monitorButton = document.getElementById('monitorButton');
+                this.wakeWordButton = document.getElementById('wakeWordButton');
                 this.speakTimeout = null;
                 this.isListening = false;
+                this.micBusy = false;
+                this.wakeWordActive = false;
                 this.screenStream = null;
                 this.screenVideo = null;
                 this.screenDetails = null;
@@ -646,6 +650,7 @@
                 this.setupSpeechRecognition();
                 this.setupScreenSharing();
                 this.setupMultiMonitor();
+                this.setupWakeWord();
                 this.loadInitialData();
             }
 
@@ -775,12 +780,18 @@
                 this.recognition.addEventListener('end', () => {
                     this.isListening = false;
                     this.micButton.classList.remove('listening');
+                    this.micBusy = false;
+                    // Browsers only allow one active speech session at a time, so
+                    // wake-word listening was paused while this ran — resume it.
+                    this.resumeWakeWordIfEnabled();
                 });
 
                 this.recognition.addEventListener('error', (e) => {
                     console.error('Speech recognition error:', e.error);
                     this.isListening = false;
                     this.micButton.classList.remove('listening');
+                    this.micBusy = false;
+                    this.resumeWakeWordIfEnabled();
                 });
 
                 this.micButton.addEventListener('click', () => this.toggleListening());
@@ -800,9 +811,87 @@
                     this.recognition.stop();
                     return;
                 }
+                this.micBusy = true;
+                if (this.wakeWordActive) {
+                    try { this.wakeRecognition.stop(); } catch (error) { /* already stopped */ }
+                }
                 this.isListening = true;
                 this.micButton.classList.add('listening');
-                this.recognition.start();
+                // A session that was already ending (e.g. wake recognition just
+                // stopped) needs a beat before the mic is free to start again.
+                setTimeout(() => {
+                    try { this.recognition.start(); } catch (error) { /* already running */ }
+                }, 150);
+            }
+
+            resumeWakeWordIfEnabled() {
+                if (!this.wakeWordActive || this.micBusy) return;
+                try { this.wakeRecognition.start(); } catch (error) { /* already running */ }
+            }
+
+            // Continuous background listening for "Hey JARVIS" while this tab is
+            // open (can be unfocused/minimized). Says a phrase like "hey jarvis
+            // how's business doing" all at once and it's sent directly; say just
+            // "hey jarvis" alone and it switches into normal mic capture for
+            // whatever you say next.
+            setupWakeWord() {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    this.wakeWordButton.disabled = true;
+                    this.wakeWordButton.title = 'Wake word not supported in this browser';
+                    return;
+                }
+
+                this.wakeRecognition = new SpeechRecognition();
+                this.wakeRecognition.continuous = true;
+                this.wakeRecognition.interimResults = false;
+                this.wakeRecognition.lang = 'en-US';
+
+                this.wakeRecognition.addEventListener('result', (e) => {
+                    const transcript = Array.from(e.results).map(r => r[0].transcript).join(' ').toLowerCase();
+                    const wakeIndex = transcript.indexOf('hey jarvis');
+                    if (wakeIndex === -1) return;
+
+                    const command = transcript.slice(wakeIndex + 'hey jarvis'.length).trim().replace(/^[,.]\s*/, '');
+                    if (command) {
+                        this.messageInput.value = command;
+                        this.sendMessage();
+                    } else {
+                        this.toggleListening();
+                    }
+                });
+
+                // continuous mode still ends on its own periodically (silence,
+                // network hiccups) — restart automatically while enabled.
+                this.wakeRecognition.addEventListener('end', () => {
+                    if (this.wakeWordActive && !this.micBusy) {
+                        try { this.wakeRecognition.start(); } catch (error) { /* already running */ }
+                    }
+                });
+
+                this.wakeRecognition.addEventListener('error', (e) => {
+                    console.warn('Wake word listening error:', e.error);
+                });
+
+                this.wakeWordButton.addEventListener('click', () => this.toggleWakeWord());
+
+                if (localStorage.getItem('jarvisWakeWord') === 'on') {
+                    this.toggleWakeWord(true);
+                }
+            }
+
+            toggleWakeWord(forceOn) {
+                const turnOn = forceOn !== undefined ? forceOn : !this.wakeWordActive;
+                this.wakeWordActive = turnOn;
+                localStorage.setItem('jarvisWakeWord', turnOn ? 'on' : 'off');
+                this.wakeWordButton.classList.toggle('sharing', turnOn);
+
+                if (turnOn) {
+                    try { this.wakeRecognition.start(); } catch (error) { /* already running */ }
+                    this.addMessage('Wake word listening enabled — say "Hey JARVIS" anytime this tab is open.', 'jarvis');
+                } else {
+                    try { this.wakeRecognition.stop(); } catch (error) { /* already stopped */ }
+                }
             }
 
             // Plays JARVIS's reply through ElevenLabs and keeps the reactor "speaking"
