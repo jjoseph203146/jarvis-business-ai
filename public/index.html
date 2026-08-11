@@ -848,11 +848,23 @@
                 this.wakeRecognition.lang = 'en-US';
 
                 this.wakeRecognition.addEventListener('result', (e) => {
-                    const transcript = Array.from(e.results).map(r => r[0].transcript).join(' ').toLowerCase();
+                    // Only look at what's NEW since the last result event — continuous
+                    // mode keeps every result since the session started, so reading
+                    // e.results in full would keep re-matching an old "hey jarvis"
+                    // forever (including JARVIS's own voice bleeding back into the mic).
+                    let transcript = '';
+                    for (let i = e.resultIndex; i < e.results.length; i++) {
+                        transcript += e.results[i][0].transcript + ' ';
+                    }
+                    transcript = transcript.toLowerCase();
+
                     const wakeIndex = transcript.indexOf('hey jarvis');
                     if (wakeIndex === -1) return;
 
                     const command = transcript.slice(wakeIndex + 'hey jarvis'.length).trim().replace(/^[,.]\s*/, '');
+                    // Restarting clears the recognizer's own result buffer, so the
+                    // next event starts clean instead of ever re-seeing this match.
+                    try { this.wakeRecognition.stop(); } catch (error) { /* already stopped */ }
                     if (command) {
                         this.messageInput.value = command;
                         this.sendMessage();
@@ -954,6 +966,16 @@
                 clearTimeout(this.speakTimeout);
                 this.arcReactor.classList.toggle('speaking', active);
                 this.statusText.textContent = active ? 'RESPONDING...' : 'SYSTEM ONLINE';
+
+                // Mute wake-word listening while audio is actually coming out of the
+                // speakers — otherwise the mic hears JARVIS's own voice and can
+                // mistake it for a new "hey jarvis" command, feeding back on itself.
+                if (active && this.wakeWordActive) {
+                    try { this.wakeRecognition.stop(); } catch (error) { /* already stopped */ }
+                } else if (!active) {
+                    this.resumeWakeWordIfEnabled();
+                }
+
                 if (active && durationMs) {
                     this.speakTimeout = setTimeout(() => this.setSpeaking(false), durationMs);
                 }
