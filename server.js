@@ -221,7 +221,7 @@ class GmailService {
 const PATTERNS = {
   money: /money|earn(?:ed|ing|ings)?|revenue|stripe|payment|payout|income|profit|sales|sold|paid|balance|charge|how much.*(?:make|made|making)/,
   email: /email|gmail|message|inbox|mail/,
-  business: /business|overview|summary|dashboard|site|website|security|request|ticket|client|lead|prospect|pipeline|how.*doing/
+  business: /business|overview|summary|dashboard|site|website|security|request|ticket|client|lead|prospect|pipeline|how.*doing|ideas|opportunit|priorit|focus|to-?do|what.*(work on|should i)|what'?s going on|anything (new|i should)/
 };
 
 const DASHBOARDS = [
@@ -244,7 +244,21 @@ function detectActions(userMessage) {
  * of opening everything at once up front. Each dashboard only triggers once
  * per reply, on its first mention.
  */
-function segmentResponseByTopic(text) {
+// Which dashboards the user's own question actually calls for — the only
+// ones allowed to auto-open. Scanning JARVIS's generated reply instead would
+// false-trigger constantly (e.g. a Gmail answer mentioning "client" or
+// "request" would wrongly pop Luminate too), so this only ever looks at
+// what the user typed/said.
+function detectTopics(userMessage) {
+  const lowerMessage = userMessage.toLowerCase();
+  const topics = new Set();
+  if (PATTERNS.money.test(lowerMessage)) topics.add('money');
+  if (PATTERNS.email.test(lowerMessage)) topics.add('email');
+  if (PATTERNS.business.test(lowerMessage)) topics.add('business');
+  return topics;
+}
+
+function segmentResponseByTopic(text, allowedTopics) {
   const sentences = text.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [text];
   const topicOf = (sentence) => {
     const lower = sentence.toLowerCase();
@@ -263,7 +277,7 @@ function segmentResponseByTopic(text) {
 
     const topic = topicOf(sentence);
     let dashboard = null;
-    if (topic && !openedTopics.has(topic)) {
+    if (topic && allowedTopics.has(topic) && !openedTopics.has(topic)) {
       const match = DASHBOARDS.find(d => d.match === PATTERNS[topic]);
       if (match) {
         dashboard = { label: match.label, url: match.url };
@@ -425,7 +439,7 @@ async function routeAndExecute(userMessage) {
   const lowerMessage = userMessage.toLowerCase();
 
   const intents = {
-    business: /business|overview|summary|dashboard|how.*doing|ideas|opportunit|priorit|to-?do|what.*(work on|should i)|what'?s going on|anything (new|i should)/.test(lowerMessage),
+    business: PATTERNS.business.test(lowerMessage),
     money: PATTERNS.money.test(lowerMessage),
     email: PATTERNS.email.test(lowerMessage),
     sites: /site|website|security|status|issue|problem/.test(lowerMessage),
@@ -518,7 +532,7 @@ app.post('/api/chat', async (req, res) => {
       response: claudeResponse,
       data: serviceData,
       actions: detectActions(message),
-      segments: segmentResponseByTopic(claudeResponse),
+      segments: segmentResponseByTopic(claudeResponse, detectTopics(message)),
       timestamp: new Date().toISOString()
     });
   } catch (error) {
